@@ -1,0 +1,7 @@
+uuid
+yt-dlp
+google-cloud-storage
+fake-useragent
+functions-framework
+google-api-python-client
+pymongo

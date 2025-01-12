@@ -3,19 +3,25 @@ import re
 import uuid
 import os
 import json
+import logging
 from google.cloud import tasks_v2
 from google.cloud import storage
 from google.cloud import pubsub_v1
 from google.oauth2 import service_account
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Path to the service account key JSON file (use environment variable)
+SERVICE_ACCOUNT_KEY_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service-account-key.json")
 
-
-# Path to the service account key JSON file
-SERVICE_ACCOUNT_KEY_PATH = "./service-account-key.json"
-
-# Load credentials from the JSON file
-credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_KEY_PATH)
+# Initialize clients using the service account key
+try:
+    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_KEY_FILE)
+except Exception as e:
+    logger.error(f"Failed to load service account key: {e}")
+    raise
 
 # Initialize GCP clients with the credentials
 tasks_client = tasks_v2.CloudTasksClient(credentials=credentials)
@@ -23,11 +29,17 @@ storage_client = storage.Client(credentials=credentials)
 publisher = pubsub_v1.PublisherClient(credentials=credentials)
 
 # GCP Config (loaded from the service account key or environment variables)
-PROJECT_ID = credentials.project_id  # Automatically extracted from the key file
+PROJECT_ID = credentials.project_id  
 LOCATION = os.getenv("GCP_LOCATION", "us-central1")  # Default to "us-central1" if not set
 QUEUE_NAME = os.getenv("GCP_QUEUE_NAME", "subtitle-video-processing-queue")
 BUCKET_NAME = os.getenv("GCP_BUCKET_NAME", "tube_genius")
 PUBSUB_TOPIC = os.getenv("GCP_PUBSUB_TOPIC", "subtitle-status")
+VIDEO_PROCESSING_FUNCTION_URL = os.getenv("VIDEO_PROCESSING_FUNCTION_URL")
+
+# Validate required environment variables
+if not VIDEO_PROCESSING_FUNCTION_URL:
+    logger.error("VIDEO_PROCESSING_FUNCTION_URL environment variable is required")
+    raise ValueError("VIDEO_PROCESSING_FUNCTION_URL environment variable is required")
 
 # YouTube URL Validation
 def is_youtube_url(url):
@@ -46,7 +58,10 @@ def create_task(video_url, task_id, user_id, language, url_type):
     task = {
         "http_request": {
             "http_method": "POST",
-            "url": os.getenv("VIDEO_PROCESSING_FUNCTION_URL"),
+            "url": VIDEO_PROCESSING_FUNCTION_URL,
+            "headers": {
+                "Content-Type": "application/json",  # Add this header
+            },
             "body": json.dumps({
                 "task_id": task_id,
                 "video_url": video_url,
@@ -58,7 +73,6 @@ def create_task(video_url, task_id, user_id, language, url_type):
     }
     parent = tasks_client.queue_path(PROJECT_ID, LOCATION, QUEUE_NAME)
     tasks_client.create_task(parent=parent, task=task)
-
 
 # Publish Status to Pub/Sub
 def publish_status(task_id, status):

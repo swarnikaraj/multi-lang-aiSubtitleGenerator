@@ -54,14 +54,16 @@ def generate_subtitle(request):
         youtube_url = request_json["youtube_url"]
         video_file = request_json["video_file"]
         user_id = request_json["user_id"]
-        language = request_json["language"]
+        
+        source_language = request_json.get("source_language", "en")  # Default to English
+        target_language = request_json["target_language"] 
 
         if not youtube_url and not video_file:
             return json.dumps({"error": "Either YouTube URL or video file is required"}), 400, headers
         if not user_id:
             return json.dumps({"error": "Unauthenticated"}), 401, headers       
-        if not language:
-            return json.dumps({"error": "language is required"}), 400, headers   
+        if not source_language or  not target_language :
+            return json.dumps({"error": "target and source language is required"}), 400, headers   
 
         # Handle YouTube URL
         if youtube_url:
@@ -72,19 +74,20 @@ def generate_subtitle(request):
         else:
             # Handle video file upload
             video_url = upload_video_to_bucket(video_file)
-            url_type = "upload"
+            url_type = "gcs"
 
         task_id = str(uuid.uuid4())
 
         # Create GCP Task
-        create_task(video_url, task_id, user_id, language, url_type)
+        create_task(video_url, task_id, user_id, source_language,target_language, url_type)
 
         # Insert task details into MongoDB
         task_details = {
             "task_id": task_id,
             "video_url": video_url,
             "user_id": user_id,
-            "language": language,
+            "source_language":source_language,
+            "target_language":target_language,
             "url_type": url_type,
             "status": "pending",  
             "downloadUrl":f"https://storage.googleapis.com/{BUCKET_NAME}/subtitles/{task_id}.vtt",

@@ -1,5 +1,6 @@
-import os
-import subprocess
+from datetime import timedelta
+
+
 
 # Set the path to the binaries
 FFMPEG_PATH = os.path.join(os.getcwd(), "bin", "ffmpeg")
@@ -9,7 +10,6 @@ YT_DLP_PATH = os.path.join(os.getcwd(), "bin", "yt-dlp")
 import os
 import json
 import logging
-import subprocess
 from google.cloud import storage, pubsub_v1
 from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import translate_v2 as translate
@@ -69,13 +69,30 @@ LANGUAGE_CODE_MAPPING = {
     "ko": "ko-KR",  # Korean
     "tr": "tr-TR",  # Turkish
 }
-def upload_subtitles_to_gcp(subtitles, task_id):
+
+
+def upload_subtitles_to_gcp(bucket_name, source_file_name,subtitles, destination_blob_name, credentials):
     """
-    Upload subtitles to GCS and return the download URL.
+    Uploads a file to Google Cloud Storage and returns a signed URL for temporary access.
     """
-    blob = storage_client.bucket(BUCKET_NAME).blob(f"subtitles/{task_id}.vtt")
-    blob.upload_from_string(subtitles, content_type="text/vtt")
-    return f"https://storage.googleapis.com/{BUCKET_NAME}/subtitles/{task_id}.vtt"
+    try:
+        
+        blob = storage_client.bucket(BUCKET_NAME).blob(f"subtitles/{source_file_name}.vtt")
+        blob.upload_from_string(subtitles, content_type="text/vtt")
+
+        logger.info(f"File uploaded to gs://{bucket_name}/{destination_blob_name}")
+
+        # Generate a signed URL valid for 1 hour
+        signed_url = blob.generate_signed_url(
+            credentials=credentials,
+            expiration=timedelta(hours=1),
+            method="GET"
+        )
+        return signed_url
+    except Exception as e:
+        logger.error(f"Error uploading to GCS: {e}")
+        return None
+    
 
 def update_task_status(task_id, status, download_url=None):
     """
@@ -137,25 +154,3 @@ def format_time(seconds):
     seconds = seconds % 60
     return f"{hours:02}:{minutes:02}:{seconds:06.3f}"
 
-def extract_audio(video_path):
-    """
-    Extract audio from video using ffmpeg.
-    """
-    audio_path = "/tmp/audio.wav"
-    subprocess.run([FFMPEG_PATH, "-i", video_path, "-q:a", "0", "-map", "a", audio_path, "-y"], check=True)
-    return audio_path
-
-def download_video(video_url, url_type):
-    """
-    Download video from GCS or YouTube.
-    """
-    video_path = "/tmp/video.mp4"
-    if url_type == "gcs":
-        # Use gsutil directly (no need for a binary)
-        subprocess.run(["gsutil", "cp", video_url, video_path], check=True)
-    elif url_type == "youtube":
-        # Use yt-dlp binary
-        subprocess.run([YT_DLP_PATH, "-o", video_path, video_url], check=True)
-    else:
-        raise ValueError("Unsupported URL type")
-    return video_path

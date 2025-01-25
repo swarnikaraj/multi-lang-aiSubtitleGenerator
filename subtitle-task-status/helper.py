@@ -1,28 +1,17 @@
-from datetime import timedelta
-
-
-
-# Set the path to the binaries
-FFMPEG_PATH = os.path.join(os.getcwd(), "bin", "ffmpeg")
-YT_DLP_PATH = os.path.join(os.getcwd(), "bin", "yt-dlp")
-
-
 import os
-import json
+from datetime import timedelta
 import logging
-from google.cloud import storage, pubsub_v1
+import subprocess
+from google.cloud import storage
 from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import translate_v2 as translate
 from google.oauth2 import service_account
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
+# Set the path to the binaries
 
 
-with open("config.json", "r") as config_file:
-    config = json.load(config_file)
-
-CONSTANTS="constant.json"
 
 SERVICE_ACCOUNT_KEY_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service-account-key.json")
 
@@ -36,16 +25,9 @@ except Exception as e:
 
 
 storage_client = storage.Client(credentials=credentials)
-publisher = pubsub_v1.PublisherClient(credentials=credentials)
 speech_client = speech.SpeechClient(credentials=credentials)
 translate_client = translate.Client(credentials=credentials)
 
-FFMPEG_PATH = os.path.join(os.getcwd(), "bin", "ffmpeg")
-YT_DLP_PATH = os.path.join(os.getcwd(), "bin", "yt-dlp")
-
-PROJECT_ID = credentials.project_id 
-BUCKET_NAME = config["GCS_BUCKET_NAME"]
-PUBSUB_TOPIC = config["PUBSUB_TOPIC"]
 
 LANGUAGE_CODE_MAPPING = {
     "en": "en-US",  # English
@@ -69,15 +51,27 @@ LANGUAGE_CODE_MAPPING = {
     "ko": "ko-KR",  # Korean
     "tr": "tr-TR",  # Turkish
 }
+def upload_to_gcs(bucket_name, source_file_path, destination_blob_name):
+    """
+    Uploads a file to Google Cloud Storage.
+    """
+    try:
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(destination_blob_name)
+        blob.upload_from_filename(source_file_path)
+        logger.info(f"File uploaded to gs://{bucket_name}/{destination_blob_name}")
+        return f"gs://{bucket_name}/{destination_blob_name}"
+    except Exception as e:
+        logger.error(f"Error uploading to GCS: {e}")
+        return None
 
-
-def upload_subtitles_to_gcp(bucket_name, source_file_name,subtitles, destination_blob_name, credentials):
+def upload_subtitles_to_gcp(bucket_name,subtitles, destination_blob_name, credentials):
     """
     Uploads a file to Google Cloud Storage and returns a signed URL for temporary access.
     """
     try:
         
-        blob = storage_client.bucket(BUCKET_NAME).blob(f"subtitles/{source_file_name}.vtt")
+        blob = storage_client.bucket(BUCKET_NAME).blob(destination_blob_name)
         blob.upload_from_string(subtitles, content_type="text/vtt")
 
         logger.info(f"File uploaded to gs://{bucket_name}/{destination_blob_name}")
@@ -93,15 +87,25 @@ def upload_subtitles_to_gcp(bucket_name, source_file_name,subtitles, destination
         logger.error(f"Error uploading to GCS: {e}")
         return None
     
-
-def update_task_status(task_id, status, download_url=None):
+def convert_audio_to_wav(input_path, output_path):
     """
-    Update the task status publish to Pub/Sub.
+    Converts audio to WAV format using FFmpeg.
     """
-    topic_path = publisher.topic_path(PROJECT_ID, PUBSUB_TOPIC)
-    data = json.dumps({"task_id": task_id, "status": status, "download_url": download_url}).encode()
-    publisher.publish(topic_path, data)
-
+    try:
+        command = [
+            "ffmpeg",
+            "-i", input_path,
+            "-ar", "16000",  # Set sample rate to 16000 Hz
+            "-ac", "1",      # Convert to mono
+            "-vn",           # Disable video
+            output_path
+        ]
+        logger.info(f"Running FFmpeg command: {' '.join(command)}")
+        subprocess.run(command, check=True)
+        logger.info(f"Converted audio to WAV: {output_path}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"FFmpeg error: {e}")
+        raise RuntimeError("FFmpeg conversion failed.")
 
 def transcribe_audio(audio_path, source_language="en"):
     with open(audio_path, "rb") as audio_file:
@@ -144,6 +148,7 @@ def generate_subtitles(transcript_with_timestamps, target_language):
             text = translate_text(text, target_language)
         subtitles += f"{i + 1}\n{start_time} --> {end_time}\n{text}\n\n"
     return subtitles
+
 
 def format_time(seconds):
     """

@@ -1,16 +1,16 @@
 import json
-import os
 import logging
 import functions_framework  # Required for Google Cloud Functions
-from download_youtube_data import process_youtube_audio
-from download_youtube_data import db
+from task_process import process_youtube_audio
+from task_process import db
 from bson.objectid import ObjectId
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
 @functions_framework.http
-def youtube_subtitle_generator(request):
+def start_transcription(request):
     """
     Cloud Function to download YouTube audio and upload it to GCS.
     Handles CORS for cross-origin requests.

@@ -1,6 +1,6 @@
 
 
-import datetime
+from datetime import datetime
 import uuid
 import functions_framework
 from helper import is_youtube_url, upload_video_to_bucket, publish_status, create_task
@@ -91,7 +91,7 @@ def generate_subtitle(request):
             "url_type": url_type,
             "status": "pending",  
             "downloadUrl":f"https://storage.googleapis.com/{BUCKET_NAME}/subtitles/{task_id}.vtt",
-            "created_at": datetime.datetime.now(),
+            "created_at": datetime.now(),
         }
         collection.insert_one(task_details)
 

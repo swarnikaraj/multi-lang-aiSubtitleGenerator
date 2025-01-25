@@ -7,5 +7,3 @@ functions-framework
 ffmpeg-python
 yt-dlp
 requests
-six
-json5

@@ -7,6 +7,7 @@ from google.oauth2 import service_account
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs
 from helper import generate_subtitles, transcribe_audio, upload_subtitles_to_gcp
+from pymongo import MongoClient
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,6 +22,18 @@ storage_client = storage.Client(credentials=credentials)
 # Add the FFmpeg binary to the PATH environment variable
 bin_path = os.path.abspath("bin")  # Path to the bin directory containing ffmpeg and ffprobe
 os.environ["PATH"] += os.pathsep + bin_path
+
+
+
+# MongoDB Configuration
+MONGO_URI = os.getenv("MONGO_URI")
+DB_NAME = os.getenv("DB_NAME", "tubeai")
+COLLECTION_NAME = "SubtitledVideos"
+
+# Initialize MongoDB Client
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client[DB_NAME]
+collection = db[COLLECTION_NAME]
 
 # Custom logger for yt-dlp
 class MyLogger:
@@ -81,7 +94,7 @@ def check_audio_exists(bucket_name, video_id):
 
 
 
-def process_youtube_audio(video_url, bucket_name,source_language,target_language):
+def process_youtube_audio(video_url, bucket_name,source_language,target_language,user_id,task_id):
     """
     Downloads YouTube audio, converts it to MP3 using FFmpeg, and uploads to GCS.
     """
@@ -123,6 +136,19 @@ def process_youtube_audio(video_url, bucket_name,source_language,target_language
         # Upload processed audio to GCS and get signed URL
         destination_blob_name = f"subtitles/{video_id}.vtt"
         signed_url = upload_subtitles_to_gcp(bucket_name, video_id,subtitles, destination_blob_name, credentials)
+        task_details = {
+            "task_id": task_id,
+            "video_url": video_url,
+            "user_id": user_id,
+            "source_language":source_language,
+            "target_language":target_language,
+            "url_type": 'youtube',
+            "status": "succesful",  
+            "downloadUrl":f"{signed_url}",
+            "created_at": datetime.datetime.now(),
+        }
+        collection.insert_one(task_details)
+
 
         # Clean up temporary files
         if os.path.exists(temp_video_path):
@@ -131,7 +157,7 @@ def process_youtube_audio(video_url, bucket_name,source_language,target_language
             os.remove(temp_audio_path)
 
         if signed_url:
-            return {"message": "Audio processing and upload successful.", "signed_url": signed_url, "tokens_used":50}
+            return {"message": "Audio processing and upload successful.", "task": task_details, "tokens_used":50}
         else:
             return {"error": "Failed to upload audio to GCS."}
     except Exception as e:

@@ -3,12 +3,14 @@ import os
 import logging
 import functions_framework  # Required for Google Cloud Functions
 from download_youtube_data import process_youtube_audio
+from download_youtube_data import db
+from bson.objectid import ObjectId
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
 @functions_framework.http
-def download_audio(request):
+def youtube_subtitle_generator(request):
     """
     Cloud Function to download YouTube audio and upload it to GCS.
     Handles CORS for cross-origin requests.
@@ -36,15 +38,30 @@ def download_audio(request):
         target_language = request_json["target_language"]  
         
 
+
         if not request_json or "video_url" not in request_json:
             return json.dumps({"error": "Invalid input. 'video_url' is required."}), 400, headers
+        
+        if not user_id:
+            return json.dumps({"error": "Invalid input. 'user_id' is required."}), 401, headers
 
+        
+        user_object_id = ObjectId(user_id)
+        query = {
+            "_id": user_object_id,
+            "issubscribed": True,
+            "coins": {"$gt": 100}
+        }
+        user = db.users.find_one(query)
+
+        if not user:
+            return json.dumps({"error": "Unauthorized"}), 401, headers
         # Extract video URL
         video_url = request_json["video_url"]
         BUCKET_NAME = "tube_genius"  
 
         # Process the YouTube audio
-        result = process_youtube_audio(video_url, BUCKET_NAME,source_language,target_language)
+        result = process_youtube_audio(video_url, BUCKET_NAME,source_language,target_language,user_id,task_id)
 
         # Return the response
         if "error" in result:

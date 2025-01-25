@@ -1,0 +1,11 @@
+yt-dlp
+google-cloud-storage
+fake-useragent
+functions-framework
+google-api-python-client
+google-cloud-storage
+google-cloud-pubsub
+google-cloud-speech
+google-cloud-translate
+pymongo
+bson

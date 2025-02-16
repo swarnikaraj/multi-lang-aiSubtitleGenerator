@@ -63,6 +63,11 @@ def start_transcription(request):
         # Process the YouTube audio
         result = process_youtube_audio(video_url, BUCKET_NAME,source_language,target_language,user_id,task_id)
 
+        db.users.update_one(
+            {"_id": user_object_id},
+            {"$inc": {"coins": -100}}  # Deduct 100 coins
+        )
+
         # Return the response
         if "error" in result:
             return json.dumps(result), 400, headers

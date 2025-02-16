@@ -1,9 +1,0 @@
-
-google-cloud-storage
-google-cloud-pubsub
-google-cloud-speech
-google-cloud-translate
-functions-framework
-ffmpeg-python
-yt-dlp
-requests

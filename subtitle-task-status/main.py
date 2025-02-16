@@ -52,6 +52,7 @@ def subtitle_task_status(request):
         video_id = task.get("video_id")
         source_language = task.get("source_language")
         target_language = task.get("target_language")
+       
         if not task:
             return {"error": "Task not found."}, 404, headers
         
@@ -60,12 +61,16 @@ def subtitle_task_status(request):
             return {"error": "Operation ID not found in task details."}, 400,headers
        
         BUCKET_NAME = "tube_genius"
+        
+
+        print("\nFinal Result:")
+     
         result = process_video(BUCKET_NAME,task_id,operation_id,video_id,source_language,target_language)
         # Return the response
         if "error" in result:
             return json.dumps(result), 400, headers
 
-        return json.dumps(result), 200, headers
+        return json.dumps(result,indent=2), 200, headers
 
        
     except Exception as e:

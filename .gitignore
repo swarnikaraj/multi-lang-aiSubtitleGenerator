@@ -1,6 +1,7 @@
 
 .codegpt
 venv/
+.venv/
 .env
 service-account-key.json
 config.json

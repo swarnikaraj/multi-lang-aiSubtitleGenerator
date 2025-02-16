@@ -9,7 +9,10 @@ from datetime import timedelta
 from urllib.parse import urlparse, parse_qs
 from helper import convert_audio_to_wav, upload_to_gcs
 from pymongo import MongoClient
-from google.cloud import speech_v1p1beta1 as speech
+from google.cloud import speech_v1
+from google.cloud import storage, translate_v2 as translate
+from google.cloud.speech_v1 import RecognitionAudio, RecognitionConfig
+from bson.objectid import ObjectId
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,7 +23,7 @@ SERVICE_ACCOUNT_KEY_FILE = "service-account-key.json"
 # Initialize clients using the service account key
 credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_KEY_FILE)
 storage_client = storage.Client(credentials=credentials)
-speech_client = speech.SpeechClient(credentials=credentials)
+speech_client = speech_v1.SpeechClient(credentials=credentials)
 # Add the FFmpeg binary to the PATH environment variable
 bin_path = os.path.abspath("bin")  # Path to the bin directory containing ffmpeg and ffprobe
 os.environ["PATH"] += os.pathsep + bin_path
@@ -148,10 +151,11 @@ def process_youtube_audio(video_url, bucket_name,source_language,target_language
 
         # Check if audio already exists
         existing_signed_url = check_subtitle_exists(bucket_name, video_id,source_language,target_language)
+        user_object_id = ObjectId(user_id)
         task_details = {
             "task_id": task_id,
             "video_url": video_url,
-            "user_id": user_id,
+            "user_id": user_object_id,
             "source_language":source_language,
             "target_language":target_language,
             "url_type": 'youtube',
@@ -188,21 +192,28 @@ def process_youtube_audio(video_url, bucket_name,source_language,target_language
         if not gcs_uri:
             return {"error": "Failed to upload audio to GCS."}
         
-        audio = speech.RecognitionAudio(uri=gcs_uri)
-        config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        audio = speech_v1.RecognitionAudio(uri=gcs_uri)
+ 
+        config = speech_v1.RecognitionConfig(
+            encoding=speech_v1.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=16000,
             language_code=LANGUAGE_CODE_MAPPING.get(source_language, "en-US"),
             enable_automatic_punctuation=True,
+            enable_word_time_offsets=True,
+            model='video'
         )
         operation = speech_client.long_running_recognize(config=config, audio=audio)
         operation_id = operation.operation.name
+        
 
-        logger.info(f"Generated async operation: {operation_id}")         
-  
+        logger.info(f"Generated async operation: {operation_id}")   
+             
+        print("Waiting for operation to complete...")
+
         task_details = {
             "task_id": task_id,
             "video_url": video_url,
+            "video_id":video_id,
             "user_id": user_id,
             "source_language":source_language,
             "target_language":target_language,
@@ -212,6 +223,7 @@ def process_youtube_audio(video_url, bucket_name,source_language,target_language
             "downloadUrl":"",
             "created_at": datetime.now(),
         }
+        
         collection.insert_one(task_details)
 
         # Clean up temporary files
@@ -220,7 +232,7 @@ def process_youtube_audio(video_url, bucket_name,source_language,target_language
         if os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
         
-        return {"message": "Subtitle generation processing", "task": task_details, "tokens_used":50}
+        return {"message": "Subtitle generation processing", "task": task_details, "tokens_used":100}
        
     except Exception as e:
         logger.error(f"Error processing YouTube audio: {e}")

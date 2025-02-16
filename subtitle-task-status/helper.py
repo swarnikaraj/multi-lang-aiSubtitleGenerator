@@ -71,7 +71,7 @@ def upload_subtitles_to_gcp(bucket_name,subtitles, destination_blob_name, creden
     """
     try:
         
-        blob = storage_client.bucket(BUCKET_NAME).blob(destination_blob_name)
+        blob = storage_client.bucket(bucket_name).blob(destination_blob_name)
         blob.upload_from_string(subtitles, content_type="text/vtt")
 
         logger.info(f"File uploaded to gs://{bucket_name}/{destination_blob_name}")
@@ -86,7 +86,7 @@ def upload_subtitles_to_gcp(bucket_name,subtitles, destination_blob_name, creden
     except Exception as e:
         logger.error(f"Error uploading to GCS: {e}")
         return None
-    
+   
 def convert_audio_to_wav(input_path, output_path):
     """
     Converts audio to WAV format using FFmpeg.
@@ -137,6 +137,33 @@ def translate_text(text, target_language):
     """
     result = translate_client.translate(text, target_language=target_language)
     return result["translatedText"]
+
+
+def generate_vtt_content(transcript_segments, target_language):
+    """Generate WebVTT format content from transcript segments."""
+    vtt_lines = ["WEBVTT\n"]
+
+    for i, segment in enumerate(transcript_segments, 1):
+        # Convert seconds to HH:MM:SS.mmm format
+        start = format_timestamp(segment["start_time"])
+        end = format_timestamp(segment["end_time"])
+
+        vtt_lines.append(f"\n{i}")
+        vtt_lines.append(f"{start} --> {end}")
+
+        # Use translated text if available, otherwise use original
+        text = segment.get("translated_text", segment["text"])
+        vtt_lines.append(f"{text}\n")
+
+    return "\n".join(vtt_lines)
+
+def format_timestamp(seconds):
+    """Convert seconds to WebVTT timestamp format (HH:MM:SS.mmm)"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
+
 
 def generate_subtitles(transcript_with_timestamps, target_language):
     subtitles = "WEBVTT\n\n"
